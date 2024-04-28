@@ -14,6 +14,7 @@ gpg="$(command -v gpg || command -v gpg2)"
 gpg_conf="${GNUPGHOME}/gpg.conf"
 
 clip_dest="${PURSE_DEST:=clipboard}"   # set to 'screen' to print to stdout
+show_dialog="${PURSE_DIALOG:=true}"    # whether to show dialog prompts
 clip_timeout="${PURSE_TIME:=10}"       # seconds to clear clipboard/screen
 comment="${PURSE_COMMENT:=}"           # *unencrypted* comment in files
 daily_backup="${PURSE_DAILY:=}"        # daily backup archive on write
@@ -104,9 +105,9 @@ read_pass () {
   else spath=$(grep -F "${username}" "${safe_ix}" | \
     tail -1 | cut -d ":" -f2)
   fi
-
-  prompt_key "password"
+  
   if [[ -s "${spath}" ]] ; then
+    prompt_key "password"
     clip <(decrypt "${spath}" | head -1) || \
       fail "Failed to decrypt ${spath}"
   else fail "Secret not available"
@@ -114,9 +115,9 @@ read_pass () {
 }
 
 prompt_key () {
-  # Print a message if safe file exists.
+  # Print a message if safe file exists and show_dialog is set.
 
-  if [[ -f "${safe_ix}" ]] ; then
+  if [[ -f "${safe_ix}" && "${show_dialog}" == "true" ]] ; then
     printf "\n  Touch key to access %s ...\n" "${1}"
   fi
 }
@@ -192,8 +193,10 @@ backup () {
 
 clip () {
   # Use clipboard or stdout and clear after timeout.
-
-  if [[ "${clip_dest}" = "screen" ]] ; then
+  if [[ "${clip_dest}" = "screen" && "${show_dialog}" == "false" ]] ; then
+    printf '%s' "$(cat ${1})"
+    return
+  elif [[ "${clip_dest}" = "screen" ]] ; then
     printf '\n%s\n' "$(cat ${1})"
   else "${copy}" < "${1}" ; fi
 
@@ -282,8 +285,7 @@ if [[ ! -f "${gpg_conf}" ]] ; then fail "GnuPG config is not available" ; fi
 if [[ ! -d "${safe_dir}" ]] ; then mkdir -p "${safe_dir}" ; fi
 
 chmod -R 0700 "${safe_dir}" "${safe_ix}" 2>/dev/null
-
-if [[ -z "${copy}" || ! -x "${copy}" ]] ; then
+if [[ (-z "${copy}" || ! -x "${copy}") && ($clip_dest == "clipboard") ]] ; then
   warn "Clipboard not available, passwords will print to screen/stdout!"
   clip_dest="screen"
 fi
@@ -312,5 +314,7 @@ elif [[ "${action}" =~ ^([wW])$ ]] ; then
 elif [[ "${action}" =~ ^([lL])$ ]] ; then list_entry
 elif [[ "${action}" =~ ^([bB])$ ]] ; then backup
 else print_help ; fi
-
-tput setaf 2 ; printf "\nDone\n" ; tput sgr0
+## Print Done if dialog is enabled
+if [[ "${show_dialog}" == "true" ]] ; then
+    tput setaf 2 ; printf "\nDone\n" ; tput sgr0
+fi
